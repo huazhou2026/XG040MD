@@ -346,8 +346,15 @@ jobs:
       - name: Build firmware
         run: |
           cd "$BUILD_ROOT/openwrt"
-          echo "开始编译..."
-          make -j$(nproc) || { echo "编译失败"; exit 1; }
+          echo "开始编译 (verbose mode)..."
+          # First try parallel build with verbose output to capture errors
+          make -j$(nproc) V=sc 2>&1 | tee build.log || {
+            echo "并行编译失败，尝试单线程编译以获取清晰错误信息..."
+            make -j1 V=sc 2>&1 | tee build-single.log
+            echo "=== 单线程编译错误输出 ==="
+            tail -100 build-single.log
+            exit 1
+          }
 
       - name: Assemble firmware artifacts
         id: assemble
