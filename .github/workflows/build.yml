@@ -203,43 +203,43 @@ jobs:
 
           case "$SOC" in
             an7583)
-              cat >> "$KCONF" <<'EOF'
-              CONFIG_CRYPTO_AES_ARM64=y
-              CONFIG_CRYPTO_AES_ARM64_BS=y
-              CONFIG_CRYPTO_AES_ARM64_CE=y
-              CONFIG_CRYPTO_AES_ARM64_CE_BLK=y
-              CONFIG_CRYPTO_AES_ARM64_CE_CCM=y
-              CONFIG_CRYPTO_AES_ARM64_NEON_BLK=y
-              CONFIG_CRYPTO_AUTHENC=y
-              CONFIG_CRYPTO_CBC=y
-              CONFIG_CRYPTO_GHASH_ARM64_CE=y
-              CONFIG_CRYPTO_HW=y
-              CONFIG_CRYPTO_DEV_EIP93=m
-              CONFIG_CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN=512
-              CONFIG_CRYPTO_DEV_EIP93_GENERIC_SW_MAX_LEN=256
-              CONFIG_CRYPTO_USER_API_AEAD=y
-              CONFIG_CRYPTO_USER_API_HASH=y
-              CONFIG_CRYPTO_USER_API_SKCIPHER=y
-EOF
+              {
+                echo 'CONFIG_CRYPTO_AES_ARM64=y'
+                echo 'CONFIG_CRYPTO_AES_ARM64_BS=y'
+                echo 'CONFIG_CRYPTO_AES_ARM64_CE=y'
+                echo 'CONFIG_CRYPTO_AES_ARM64_CE_BLK=y'
+                echo 'CONFIG_CRYPTO_AES_ARM64_CE_CCM=y'
+                echo 'CONFIG_CRYPTO_AES_ARM64_NEON_BLK=y'
+                echo 'CONFIG_CRYPTO_AUTHENC=y'
+                echo 'CONFIG_CRYPTO_CBC=y'
+                echo 'CONFIG_CRYPTO_GHASH_ARM64_CE=y'
+                echo 'CONFIG_CRYPTO_HW=y'
+                echo 'CONFIG_CRYPTO_DEV_EIP93=m'
+                echo 'CONFIG_CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN=512'
+                echo 'CONFIG_CRYPTO_DEV_EIP93_GENERIC_SW_MAX_LEN=256'
+                echo 'CONFIG_CRYPTO_USER_API_AEAD=y'
+                echo 'CONFIG_CRYPTO_USER_API_HASH=y'
+                echo 'CONFIG_CRYPTO_USER_API_SKCIPHER=y'
+              } >> "$KCONF"
               ;;
             an7581)
-              cat >> "$KCONF" <<'EOF'
-              CONFIG_CRYPTO_AES=y
-              CONFIG_CRYPTO_AES_ARM64=y
-              CONFIG_CRYPTO_AES_ARM64_BS=y
-              CONFIG_CRYPTO_AES_ARM64_NEON_BLK=y
-              CONFIG_CRYPTO_SIMD=y
-              CONFIG_CRYPTO_CBC=y
-              CONFIG_CRYPTO_CTR=y
-              CONFIG_CRYPTO_XTS=y
-              CONFIG_CRYPTO_GHASH=y
-              CONFIG_CRYPTO_GCM=y
-              CONFIG_CRYPTO_HW=y
-              CONFIG_CRYPTO_DEV_EIP93=m
-              CONFIG_CRYPTO_AUTHENC=y
-              CONFIG_CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN=512
-              CONFIG_CRYPTO_DEV_EIP93_GENERIC_SW_MAX_LEN=256
-EOF
+              {
+                echo 'CONFIG_CRYPTO_AES=y'
+                echo 'CONFIG_CRYPTO_AES_ARM64=y'
+                echo 'CONFIG_CRYPTO_AES_ARM64_BS=y'
+                echo 'CONFIG_CRYPTO_AES_ARM64_NEON_BLK=y'
+                echo 'CONFIG_CRYPTO_SIMD=y'
+                echo 'CONFIG_CRYPTO_CBC=y'
+                echo 'CONFIG_CRYPTO_CTR=y'
+                echo 'CONFIG_CRYPTO_XTS=y'
+                echo 'CONFIG_CRYPTO_GHASH=y'
+                echo 'CONFIG_CRYPTO_GCM=y'
+                echo 'CONFIG_CRYPTO_HW=y'
+                echo 'CONFIG_CRYPTO_DEV_EIP93=m'
+                echo 'CONFIG_CRYPTO_AUTHENC=y'
+                echo 'CONFIG_CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN=512'
+                echo 'CONFIG_CRYPTO_DEV_EIP93_GENERIC_SW_MAX_LEN=256'
+              } >> "$KCONF"
               ;;
           esac
 
