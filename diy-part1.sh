@@ -18,26 +18,18 @@ readonly ADD_AIROHA_NPU=true
 readonly ADD_OPENCLASH=false
 readonly ADD_DAE=false
 readonly ADD_HONK=false
-readonly ADD_USB_WIFI_DRIVERS=true
+# USB WiFi 驱动已在官方 feeds 中（kmod-rtl8812au-ct, kmod-rtl8821cu 等），无需额外克隆
+readonly ADD_USB_WIFI_DRIVERS=false
 
 # ---------------------------------------------------------
 # 插件清单——"开关 + 仓库 + 目录 + 分支"集中在这里
-# 新增插件只需加一行，不再到处复制粘贴
+# 仅包含需要从外部仓库拉取的 LuCI 应用（内核模块走 feeds）
 # ---------------------------------------------------------
 readonly PKG_LIST=(
   "luci-app-airoha-npu|${ADD_AIROHA_NPU}|https://github.com/luanmuc/luci-app-airoha-npu|main"
   "luci-app-openclash|${ADD_OPENCLASH}|https://github.com/vernesong/OpenClash|dev"
   "luci-app-dae|${ADD_DAE}|https://github.com/QiuSimons/luci-app-dae|main"
   "honk|${ADD_HONK}|https://github.com/QiuSimons/luci-app-honk|main"
-  "rtl8812au-ct|${ADD_USB_WIFI_DRIVERS}|https://github.com/aircrack-ng/rtl8812au|v5.6.4.2"
-  "rtl8821cu|${ADD_USB_WIFI_DRIVERS}|https://github.com/brektrou/rtl8821cu|master"
-  "rtl8814au|${ADD_USB_WIFI_DRIVERS}|https://github.com/aircrack-ng/rtl8814au|master"
-  "rtl8723bu|${ADD_USB_WIFI_DRIVERS}|https://github.com/lwfinger/rtl8723bu|master"
-  "rtl8192eu|${ADD_USB_WIFI_DRIVERS}|https://github.com/Mange/rtl8192eu-linux-driver|master"
-  "rtl88x2bu|${ADD_USB_WIFI_DRIVERS}|https://github.com/RinCat/RTL88x2BU-Linux-Driver|master"
-  "rtl8811cu|${ADD_USB_WIFI_DRIVERS}|https://github.com/brektrou/rtl8811cu|master"
-  "mt76x2u|${ADD_USB_WIFI_DRIVERS}|https://github.com/openwrt/mt76|master"
-  "mt7921u|${ADD_USB_WIFI_DRIVERS}|https://github.com/openwrt/mt76|master"
 )
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
