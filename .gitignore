@@ -1,0 +1,37 @@
+# Build outputs
+artifact/
+openwrt/
+bin/
+build_dir/
+staging_dir/
+tmp/
+logs/
+dl/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+*.token
+.env
+.env.local
+
+# Package feeds
+feeds/
+package/feeds/
+package/custom/
+
+# Config backups
+.config.old
+config.buildinfo
+.manifest

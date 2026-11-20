@@ -1,0 +1,383 @@
+name: Build PonWrt for XG040MD
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: '机型 profile'
+        required: true
+        default: 'nokia_xg-040g-md-ubi'
+        type: choice
+        options:
+          - nokia_xg-040g-md-ubi
+      proxy:
+        description: '代理插件变体'
+        required: false
+        default: 'openclash'
+        type: choice
+        options:
+          - ''
+          - openclash
+          - dae
+          - honk
+      disable_packages:
+        description: '要禁用的包（空格分隔）'
+        required: false
+        default: 'luci-app-ddns nano luci-app-tailscale-community tailscale luci-app-msd_lite msd_lite luci-i18n-msd_lite-zh-cn luci-i18n-ddns-zh-cn'
+      fw_author:
+        description: '固件版本后缀作者名'
+        required: false
+        default: 'huazhou2026'
+      upload_release:
+        description: '固件发布到 Release'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      ignore_cache:
+        description: '忽略工具链缓存强制重编'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+env:
+  BUILD_ROOT: /workdir
+  SOURCE: 'fork'
+  FW_AUTHOR: 'huazhou2026'
+  REPO_URL: 'https://github.com/wuziwei/ponwrt-ZN504-HG5585F'
+  FEEDS_CONF: ''
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+  USE_DL_CACHE: true
+  USE_CCACHE: false
+  TZ: Asia/Shanghai
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REPO_BRANCH: 'master'
+  SOC: 'an7581'
+  PROFILE: '${{ github.event.inputs.profile }}'
+  BUILD_SCOPE: 'firmware'
+  IGNORE_CACHE: '${{ github.event.inputs.ignore_cache }}'
+  FW_BUILD_TIME: ''
+  FW_DESC_SUFFIX: ''
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve device profile
+        id: resolve
+        run: |
+          PROFILE="${PROFILE}"
+          SOC="${SOC}"
+
+          echo "week=$(date +%Y%W)" >> "$GITHUB_OUTPUT"
+
+          if [ "$PROFILE" != "all" ]; then
+            case "$PROFILE" in
+              nokia_xg-040g-mf*) SOC="an7583" ;;
+              *) SOC="an7581" ;;
+            esac
+          fi
+
+          echo "SOC=$SOC" >> "$GITHUB_ENV"
+          echo "PROFILE=$PROFILE" >> "$GITHUB_ENV"
+          echo "DEVICE_NAME=ponwrt-${SOC}-${PROFILE}" >> "$GITHUB_ENV"
+
+          if [ "$PROFILE" = "all" ]; then
+            echo "CONFIG_FILE=configs/${SOC}.config" >> "$GITHUB_ENV"
+          else
+            echo "CONFIG_FILE=configs/${PROFILE}.config" >> "$GITHUB_ENV"
+          fi
+
+          echo "========================================"
+          echo "SoC : $SOC"
+          echo "Profile : $PROFILE"
+          echo "Source : ${SOURCE} (${REPO_URL})"
+          echo "Branch : ${REPO_BRANCH}"
+          echo "Scope : ${BUILD_SCOPE}"
+          echo "Author : ${FW_AUTHOR}"
+          echo "========================================"
+
+      - name: Free disk space & init build environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/lib/jvm \
+            /usr/local/share/powershell /usr/share/swift 2>/dev/null || true
+          sudo docker image prune --all --force 2>/dev/null || true
+          sudo -E apt-get -yqq purge firefox snapd 2>/dev/null || true
+
+          sudo swapoff -a 2>/dev/null || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile && sudo swapon /swapfile
+
+          sudo -E apt-get -yqq update
+          sudo -E apt-get -yqq install build-essential clang llvm dwarves \
+            libssl-dev libelf-dev bc flex bison python3 python3-distutils \
+            xz-utils tar unzip zip zstd dos2unix ccache gettext \
+            rsync file wget curl git subversion 2>/dev/null || true
+
+          if [ -x "$GITHUB_WORKSPACE/scripts/init_build_environment.sh" ]; then
+            bash "$GITHUB_WORKSPACE/scripts/init_build_environment.sh" || true
+          else
+            sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)' || true
+          fi
+
+          sudo -E apt-get -yqq autoremove --purge
+          sudo -E apt-get -yqq clean
+          sudo -E timedatectl set-timezone "$TZ"
+
+          sudo mkdir -p /workdir
+          sudo chown "$USER":"$USER" /workdir
+
+          echo "磁盘空间:"; df -hT
+          echo "内存/Swap:"; free -h
+
+      - name: Clone source code
+        run: |
+          cd "$BUILD_ROOT"
+          df -hT "$PWD"
+          git clone "$REPO_URL" -b "$REPO_BRANCH" --single-branch --depth=1 openwrt
+          ln -sf "$BUILD_ROOT/openwrt" "$GITHUB_WORKSPACE/openwrt"
+
+          echo "FW_AUTHOR=${FW_AUTHOR:-huazhou2026}" >> "$GITHUB_ENV"
+          cd openwrt && echo "commit: $(git rev-parse --short HEAD)"
+
+      - name: Patch kernel config (generic + SoC-specific)
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+
+          GEN_CONF="target/linux/generic/config-6.18"
+          sed -i -e '/^CONFIG_TCP_CONG_BBR1=/d' \
+            -e '/^# CONFIG_TCP_CONG_BBR1 is not set$/d' "$GEN_CONF"
+          echo '# CONFIG_TCP_CONG_BBR1 is not set' >> "$GEN_CONF"
+
+          case "$SOC" in
+            an7583) KCONF="target/linux/airoha/an7583/config-6.18" ;;
+            an7581) KCONF="target/linux/airoha/an7581/config-6.18" ;;
+            *) echo "::error::未知 SOC=$SOC"; exit 1 ;;
+          esac
+
+          [ -f "$KCONF" ] || { echo "::error::未找到 $KCONF"; exit 1; }
+
+          for key in \
+            CRYPTO_AES CRYPTO_AES_ARM64 CRYPTO_AES_ARM64_BS \
+            CRYPTO_AES_ARM64_CE CRYPTO_AES_ARM64_CE_BLK CRYPTO_AES_ARM64_CE_CCM \
+            CRYPTO_AES_ARM64_NEON_BLK CRYPTO_SIMD \
+            CRYPTO_AUTHENC CRYPTO_CBC CRYPTO_CTR CRYPTO_XTS \
+            CRYPTO_GHASH CRYPTO_GHASH_ARM64_CE CRYPTO_GCM \
+            CRYPTO_HW CRYPTO_DEV_EIP93 \
+            CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN CRYPTO_DEV_EIP93_GENERIC_SW_MAX_LEN \
+            CRYPTO_USER_API_AEAD CRYPTO_USER_API_HASH CRYPTO_USER_API_SKCIPHER \
+            TCP_CONG_BBR1; do
+            sed -i -e "/^CONFIG_${key}=/d" -e "/^# CONFIG_${key} is not set$/d" "$KCONF"
+          done
+
+          case "$SOC" in
+            an7583)
+              cat >> "$KCONF" <<'EOF'
+CONFIG_CRYPTO_AES_ARM64=y
+CONFIG_CRYPTO_AES_ARM64_BS=y
+CONFIG_CRYPTO_AES_ARM64_CE=y
+CONFIG_CRYPTO_AES_ARM64_CE_BLK=y
+CONFIG_CRYPTO_AES_ARM64_CE_CCM=y
+CONFIG_CRYPTO_AES_ARM64_NEON_BLK=y
+CONFIG_CRYPTO_AUTHENC=y
+CONFIG_CRYPTO_CBC=y
+CONFIG_CRYPTO_GHASH_ARM64_CE=y
+CONFIG_CRYPTO_HW=y
+CONFIG_CRYPTO_DEV_EIP93=m
+CONFIG_CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN=512
+CONFIG_CRYPTO_DEV_EIP93_GENERIC_SW_MAX_LEN=256
+CONFIG_CRYPTO_USER_API_AEAD=y
+CONFIG_CRYPTO_USER_API_HASH=y
+CONFIG_CRYPTO_USER_API_SKCIPHER=y
+EOF
+              ;;
+            an7581)
+              cat >> "$KCONF" <<'EOF'
+CONFIG_CRYPTO_AES=y
+CONFIG_CRYPTO_AES_ARM64=y
+CONFIG_CRYPTO_AES_ARM64_BS=y
+CONFIG_CRYPTO_AES_ARM64_NEON_BLK=y
+CONFIG_CRYPTO_SIMD=y
+CONFIG_CRYPTO_CBC=y
+CONFIG_CRYPTO_CTR=y
+CONFIG_CRYPTO_XTS=y
+CONFIG_CRYPTO_GHASH=y
+CONFIG_CRYPTO_GCM=y
+CONFIG_CRYPTO_HW=y
+CONFIG_CRYPTO_DEV_EIP93=m
+CONFIG_CRYPTO_AUTHENC=y
+CONFIG_CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN=512
+CONFIG_CRYPTO_DEV_EIP93_GENERIC_SW_MAX_LEN=256
+EOF
+              ;;
+          esac
+
+          echo '# CONFIG_TCP_CONG_BBR1 is not set' >> "$KCONF"
+
+          case "$SOC" in
+            an7583) EXPECT=16 ;;
+            an7581) EXPECT=15 ;;
+          esac
+
+          GOT=$(grep -cE '^CONFIG_(CRYPTO|TCP_CONG_BBR1)' "$KCONF")
+          echo "内核 config 注入：$GOT / $EXPECT 条"
+          [ "$GOT" -ge "$EXPECT" ] || { echo "::error::配置注入不完整"; grep -E '^CONFIG_(CRYPTO|TCP)' "$KCONF"; exit 1; }
+          echo "✅ $SOC 内核 config 已注入"
+
+      - name: Cache dl directory
+        if: env.USE_DL_CACHE == 'true'
+        uses: actions/cache@v5
+        continue-on-error: true
+        with:
+          path: /workdir/openwrt/dl
+          key: ponwrt-dl-${{ env.SOURCE }}-${{ github.event.inputs.branch || 'master' }}-${{ steps.resolve.outputs.week }}
+          restore-keys: |
+            ponwrt-dl-${{ env.SOURCE }}-${{ github.event.inputs.branch || 'master' }}-
+          save-always: true
+
+      - name: Update & install feeds
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          if [ -n "${FEEDS_CONF}" ] && [ -e "$GITHUB_WORKSPACE/${FEEDS_CONF}" ]; then
+            cp "$GITHUB_WORKSPACE/${FEEDS_CONF}" feeds.conf.default
+          fi
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Pull optional plugins (diy-part1.sh)
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          chmod +x "$GITHUB_WORKSPACE/$DIY_P1_SH"
+          "$GITHUB_WORKSPACE/$DIY_P1_SH"
+
+      - name: Load custom configuration
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          [ -e "$GITHUB_WORKSPACE/files" ] && cp -r "$GITHUB_WORKSPACE/files" files
+          [ -d files/sbin ] && chmod +x files/sbin/* 2>/dev/null
+          [ -d files/etc/uci-defaults ] && chmod +x files/etc/uci-defaults/* 2>/dev/null
+
+          if [ -f "configs/${SOC}.config" ]; then
+            cp "configs/${SOC}.config" .config
+            echo "✅ 已用源码基座 defconfig 打底: configs/${SOC}.config"
+          else
+            : > .config
+            echo "::warning::源码中无 configs/${SOC}.config，仅用精简配置"
+          fi
+
+          if [ -e "$GITHUB_WORKSPACE/${CONFIG_FILE}" ]; then
+            cat "$GITHUB_WORKSPACE/${CONFIG_FILE}" >> .config
+            echo "✅ 已追加机型配置: ${CONFIG_FILE}"
+          elif [ -e "$GITHUB_WORKSPACE/configs/${SOC}.config" ]; then
+            cat "$GITHUB_WORKSPACE/configs/${SOC}.config" >> .config
+            echo "✅ 已追加 SoC 通用配置"
+          else
+            echo "::error::找不到机型配置 ${CONFIG_FILE}"
+            exit 1
+          fi
+
+      - name: Apply device profile
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          if [ "${PROFILE}" = "all" ]; then
+            echo "全机型编译，不做裁剪"
+          else
+            sed -i '/CONFIG_TARGET_DEVICE_/d; /^CONFIG_TARGET_MULTI_PROFILE=/d' .config
+            {
+              echo "CONFIG_TARGET_MULTI_PROFILE=y"
+              echo "CONFIG_TARGET_DEVICE_airoha_${SOC}_DEVICE_${PROFILE}=y"
+              echo "CONFIG_TARGET_DEVICE_PACKAGES_airoha_${SOC}_DEVICE_${PROFILE}=\"\""
+            } >> .config
+          fi
+
+      - name: Customize configuration (diy-part2.sh)
+        env:
+          FW_AUTHOR: ${{ env.FW_AUTHOR }}
+          FW_BUILD_TIME: ${{ env.FW_BUILD_TIME }}
+          FW_DESC_SUFFIX: ${{ env.FW_DESC_SUFFIX }}
+          TZ: ${{ env.TZ }}
+          LAN_IP: 192.168.2.1
+          LAN_HOSTNAME: XG040MD
+          ENABLE_USB_OPT_MOUNT: 1
+          ENABLE_SYSCTL_TUNING: 1
+          DISABLE_PACKAGES: ${{ github.event.inputs.disable_packages }}
+          PROXY_VARIANT: ${{ github.event.inputs.proxy }}
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          chmod +x "$GITHUB_WORKSPACE/$DIY_P2_SH"
+          "$GITHUB_WORKSPACE/$DIY_P2_SH"
+
+      - name: Download package sources
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          make download -j$(nproc) || true
+
+      - name: Build firmware
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          echo "开始编译..."
+          make -j$(nproc) || { echo "编译失败"; exit 1; }
+
+      - name: Assemble firmware artifacts
+        id: assemble
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          mkdir -p "$GITHUB_WORKSPACE/artifact"
+          find bin/targets -name "*.itb" -o -name "*.ubi" -o -name "*.img" -o -name "*.bin" | head -20 | while read f; do
+            cp "$f" "$GITHUB_WORKSPACE/artifact/"
+          done
+          ls -la "$GITHUB_WORKSPACE/artifact/"
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        if: env.UPLOAD_FIRMWARE == 'true'
+        with:
+          name: ${{ env.DEVICE_NAME }}-firmware
+          path: artifact/
+          retention-days: 30
+
+      - name: Create Release
+        if: env.UPLOAD_RELEASE == 'true' && github.event.inputs.upload_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.DEVICE_NAME }}-${{ github.run_number }}
+          name: ${{ env.DEVICE_NAME }} ${{ github.run_number }}
+          body: |
+            **固件信息**
+            - 机型: Nokia XG-040G-MD (UBI)
+            - SoC: AN7581
+            - 作者: ${{ env.FW_AUTHOR }}
+            - 构建时间: $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')
+            - 源码: ${{ env.REPO_URL }}@${{ env.REPO_BRANCH }}
+
+            **额外功能**
+            - USB无线驱动: 8811CU, 88x2bu, mt76x2u, rtl8812au, 8821cu, 8814au, 8723bu, 8192eu, MT7921AU
+            - 定时重启: luci-app-autoreboot
+            - NTP服务器: ntp.ntsc.ac.cn, ntp1.aliyun.com, cn.pool.ntp.org, time.cloudflare.com
+            - ttyd Web终端: luci-app-ttyd
+            - 代理插件: ${{ github.event.inputs.proxy || 'openclash' }}
+          files: artifact/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
