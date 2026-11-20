@@ -44,6 +44,15 @@ on:
         options:
           - 'false'
           - 'true'
+      branch:
+        description: 'ponwrt 源码分支'
+        required: false
+        default: 'master'
+        type: choice
+        options:
+          - master
+          - pon
+  repository_dispatch:
 
 env:
   BUILD_ROOT: /workdir
