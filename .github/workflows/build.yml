@@ -357,6 +357,15 @@ jobs:
           find bin/targets -name "*.itb" -o -name "*.ubi" -o -name "*.img" -o -name "*.bin" | head -20 | while read f; do
             cp "$f" "$GITHUB_WORKSPACE/artifact/"
           done
+          # 重命名为用户期望的文件名（airoha 前缀）
+          for f in "$GITHUB_WORKSPACE/artifact"/ponwrt-an7581-nokia_xg-040g-md-ubi-*.itb; do
+            if [ -f "$f" ]; then
+              base=$(basename "$f")
+              newname="ponwrt-airoha-an7581-${base#ponwrt-an7581-}"
+              cp "$f" "$GITHUB_WORKSPACE/artifact/$newname"
+              echo "✅ 已生成: $newname"
+            fi
+          done
           ls -la "$GITHUB_WORKSPACE/artifact/"
 
       - name: Upload firmware artifact
