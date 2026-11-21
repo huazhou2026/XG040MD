@@ -384,13 +384,18 @@ jobs:
       - name: Pre-build curl (fail fast + capture error)
         run: |
           cd "$BUILD_ROOT/openwrt"
-          echo "=== 预编译 curl，快速暴露依赖/编译问题 ==="
           set -o pipefail
-          if ! make package/feeds/packages/curl/compile V=sc -j$(nproc) 2>&1 | tee curl-build.log; then
-            echo "::error::curl 预编译失败"
+          echo "=== 预编译 curl（并行）==="
+          if ! make package/feeds/packages/curl/compile -j$(nproc) V=sc 2>&1 | tee curl-build.log; then
+            echo "::error::curl 并行预编译失败，单线程重试以定位确切错误..."
+            # 增量单线程重试：已编译的不会重复，直达出错点，日志线性清晰
+            make package/feeds/packages/curl/compile -j1 V=s 2>&1 | tee curl-single.log || true
             {
-              echo "===== curl build error (last 300 lines) ====="
-              tail -300 curl-build.log
+              echo "===== 单线程重试日志（最后 250 行，含确切编译错误）====="
+              tail -250 curl-single.log
+              echo ""
+              echo "===== 两次日志中的 ERROR 行汇总 ====="
+              grep -n "ERROR:" curl-build.log curl-single.log | head -40
             } > "$GITHUB_WORKSPACE/curl-error.log"
             exit 1
           fi
@@ -399,18 +404,22 @@ jobs:
       - name: Build firmware
         run: |
           cd "$BUILD_ROOT/openwrt"
-          echo "开始编译 (verbose mode)..."
-          # set -o pipefail 确保管道中 make 的失败不会被 tee 掩盖
+          echo "开始编译..."
+          # 原版仓库验证过的模式：并行失败后单线程重试（增量、快速直达出错点）
           set -o pipefail
-          make -j$(nproc) V=sc 2>&1 | tee build.log || {
-            echo "::error::并行编译失败，提取错误信息..."
-            {
-              echo "===== build error (last 300 lines) ====="
-              tail -300 build.log
-            } > "$GITHUB_WORKSPACE/build-error.log"
-            exit 1
-          }
-          echo "✅ 编译完成"
+          if ! make -j$(nproc) 2>&1 | tee build.log; then
+            echo "::error::并行编译失败，单线程重试以定位确切错误..."
+            if ! make -j1 V=s 2>&1 | tee build-single.log; then
+              {
+                echo "===== 单线程重试日志（最后 250 行，含确切编译错误）====="
+                tail -250 build-single.log
+              } > "$GITHUB_WORKSPACE/build-error.log"
+              exit 1
+            fi
+            echo "✅ 单线程重试成功（并行编译存在偶发竞态）"
+          else
+            echo "✅ 编译完成"
+          fi
 
       - name: Upload build error log
         if: failure()
