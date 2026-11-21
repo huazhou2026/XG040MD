@@ -381,6 +381,25 @@ jobs:
           }
           echo "✅ 交叉工具链编译成功"
 
+      - name: Pre-build kernel (fail fast)
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          set -o pipefail
+          echo "=== 编译内核（kmod 包的前置条件）==="
+          make target/compile -j$(nproc) 2>&1 | tee kernel-build.log || {
+            echo "::error::内核编译失败，单线程重试定位确切错误..."
+            make target/compile -j1 V=s 2>&1 | tee kernel-single.log || true
+            {
+              echo "===== 单线程重试日志（最后 250 行，含确切编译错误）====="
+              tail -250 kernel-single.log
+              echo ""
+              echo "===== 两次日志中的 ERROR 行汇总 ====="
+              grep -n "ERROR:" kernel-build.log kernel-single.log | head -40
+            } > "$GITHUB_WORKSPACE/kernel-error.log"
+            exit 1
+          }
+          echo "✅ 内核编译成功"
+
       - name: Pre-build curl (fail fast + capture error)
         run: |
           cd "$BUILD_ROOT/openwrt"
@@ -431,6 +450,7 @@ jobs:
             ${{ github.workspace }}/build-error.log
             ${{ github.workspace }}/tools-error.log
             ${{ github.workspace }}/toolchain-error.log
+            ${{ github.workspace }}/kernel-error.log
           if-no-files-found: ignore
           retention-days: 7
 
