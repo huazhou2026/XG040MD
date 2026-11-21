@@ -314,12 +314,19 @@ jobs:
           if [ "${PROFILE}" = "all" ]; then
             echo "全机型编译，不做裁剪"
           else
-            sed -i '/CONFIG_TARGET_DEVICE_/d; /^CONFIG_TARGET_MULTI_PROFILE=/d' .config
+            # 带回退值：env 链路任何一环丢失都保证机型不落空
+            DEV_PROFILE="${PROFILE:-nokia_xg-040g-md-ubi}"
+            DEV_SOC="${SOC:-an7581}"
+            echo "锁定机型: ${DEV_PROFILE} (SoC: ${DEV_SOC})"
+            sed -i '/^CONFIG_TARGET_DEVICE_airoha_/d; /^# CONFIG_TARGET_DEVICE_airoha_/d; /^CONFIG_TARGET_MULTI_PROFILE=/d' .config
             {
               echo "CONFIG_TARGET_MULTI_PROFILE=y"
-              echo "CONFIG_TARGET_DEVICE_airoha_${SOC}_DEVICE_${PROFILE}=y"
-              echo "CONFIG_TARGET_DEVICE_PACKAGES_airoha_${SOC}_DEVICE_${PROFILE}=\"\""
+              echo "CONFIG_TARGET_PER_DEVICE_ROOTFS=y"
+              echo "CONFIG_TARGET_DEVICE_airoha_${DEV_SOC}_DEVICE_${DEV_PROFILE}=y"
+              echo "CONFIG_TARGET_DEVICE_PACKAGES_airoha_${DEV_SOC}_DEVICE_${DEV_PROFILE}=\"\""
             } >> .config
+            echo "=== 追加后的设备行 ==="
+            grep "DEVICE_${DEV_PROFILE}" .config
           fi
 
       - name: Customize configuration (diy-part2.sh)
@@ -349,13 +356,23 @@ jobs:
           }
           echo "✅ 源码包下载完成"
 
-      - name: Prepare config (defconfig)
+      - name: Prepare config (defconfig + device verification)
         run: |
           cd "$BUILD_ROOT/openwrt"
           echo "=== 规范化 .config（消除 out of sync）==="
           make defconfig
+          echo "=== 设备选择验证（关键！）==="
+          echo "--- targetinfo 中的 nokia 机型元数据 ---"
+          grep -c "nokia_xg-040g-md-ubi" tmp/.targetinfo 2>/dev/null || echo "0 (无元数据!)"
+          echo "--- .config 中选中的设备 ---"
+          grep -E "^CONFIG_TARGET_DEVICE_.*=y" .config || echo "(没有任何设备被选中!)"
+          if ! grep -q "^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y" .config; then
+            echo "::error::机型 nokia_xg-040g-md-ubi 未被选中，defconfig 回退到了默认设备（EVB）！立即停止，避免编错固件。"
+            grep -E "^CONFIG_TARGET" .config | head -20
+            exit 1
+          fi
+          echo "✅ 机型确认: nokia_xg-040g-md-ubi"
           echo "✅ defconfig 完成"
-          grep -c "=y" .config || true
 
       - name: Pre-build host tools (fail fast)
         run: |
@@ -460,11 +477,25 @@ jobs:
           cd "$BUILD_ROOT/openwrt"
           mkdir -p "$GITHUB_WORKSPACE/artifact"
           
+          echo "=== 机型固件验证（关键！）==="
+          EXPECTED="bin/targets/airoha/an7581/ponwrt-an7581-nokia_xg-040g-md-ubi-squashfs-sysupgrade.itb"
+          if [ ! -f "$EXPECTED" ]; then
+            echo "::error::未找到预期固件 $EXPECTED —— 构建产物机型不匹配！"
+            echo "=== bin/targets 实际内容 ==="
+            find bin/targets -type f | head -60
+            exit 1
+          fi
+          echo "✅ 找到预期固件: $EXPECTED"
+          
           echo "=== Searching for firmware files in bin/targets ==="
           find bin/targets -type f \( -name "*.itb" -o -name "*.ubi" -o -name "*.img" -o -name "*.bin" \) | while read f; do
             echo "Found: $f"
             cp "$f" "$GITHUB_WORKSPACE/artifact/"
           done
+          
+          # 保存最终配置供追溯
+          cp .config "$GITHUB_WORKSPACE/artifact/final.config" 2>/dev/null || true
+          [ -f bin/targets/airoha/an7581/config.buildinfo ] && cp bin/targets/airoha/an7581/config.buildinfo "$GITHUB_WORKSPACE/artifact/" || true
           
           echo "=== All files in artifact directory ==="
           ls -la "$GITHUB_WORKSPACE/artifact/"
