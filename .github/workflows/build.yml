@@ -397,7 +397,7 @@ jobs:
         if: env.UPLOAD_FIRMWARE == 'true'
         with:
           name: ${{ env.DEVICE_NAME }}-firmware
-          path: artifact/
+          path: ${{ github.workspace }}/artifact/
           retention-days: 30
 
       - name: Create Release
@@ -420,6 +420,6 @@ jobs:
             - NTP服务器: ntp.ntsc.ac.cn, ntp1.aliyun.com, cn.pool.ntp.org, time.cloudflare.com
             - ttyd Web终端: luci-app-ttyd
             - 代理插件: ${{ github.event.inputs.proxy || 'openclash' }}
-          files: artifact/*
+          files: ${{ github.workspace }}/artifact/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
