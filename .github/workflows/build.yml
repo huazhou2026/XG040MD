@@ -342,20 +342,54 @@ jobs:
       - name: Download package sources
         run: |
           cd "$BUILD_ROOT/openwrt"
-          make download -j$(nproc) || true
+          echo "=== 并行下载源码包 ==="
+          make download -j$(nproc) || {
+            echo "并行下载有失败项，单线程重试（可确定性补齐损坏/缺失的包）..."
+            make download -j1 V=s
+          }
+          echo "✅ 源码包下载完成"
+
+      - name: Pre-build curl (fail fast + capture error)
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          echo "=== 预编译 curl，快速暴露依赖/编译问题 ==="
+          set -o pipefail
+          if ! make package/feeds/packages/curl/compile V=sc -j$(nproc) 2>&1 | tee curl-build.log; then
+            echo "::error::curl 预编译失败"
+            {
+              echo "===== curl build error (last 300 lines) ====="
+              tail -300 curl-build.log
+            } > "$GITHUB_WORKSPACE/curl-error.log"
+            exit 1
+          fi
+          echo "✅ curl 预编译成功"
 
       - name: Build firmware
         run: |
           cd "$BUILD_ROOT/openwrt"
           echo "开始编译 (verbose mode)..."
-          # First try parallel build with verbose output to capture errors
+          # set -o pipefail 确保管道中 make 的失败不会被 tee 掩盖
+          set -o pipefail
           make -j$(nproc) V=sc 2>&1 | tee build.log || {
-            echo "并行编译失败，尝试单线程编译以获取清晰错误信息..."
-            make -j1 V=sc 2>&1 | tee build-single.log
-            echo "=== 单线程编译错误输出 ==="
-            tail -100 build-single.log
+            echo "::error::并行编译失败，提取错误信息..."
+            {
+              echo "===== build error (last 300 lines) ====="
+              tail -300 build.log
+            } > "$GITHUB_WORKSPACE/build-error.log"
             exit 1
           }
+          echo "✅ 编译完成"
+
+      - name: Upload build error log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-error-log
+          path: |
+            ${{ github.workspace }}/curl-error.log
+            ${{ github.workspace }}/build-error.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Assemble firmware artifacts
         id: assemble
