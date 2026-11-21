@@ -349,6 +349,38 @@ jobs:
           }
           echo "✅ 源码包下载完成"
 
+      - name: Prepare config (defconfig)
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          echo "=== 规范化 .config（消除 out of sync）==="
+          make defconfig
+          echo "✅ defconfig 完成"
+          grep -c "=y" .config || true
+
+      - name: Pre-build host tools (fail fast)
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          set -o pipefail
+          echo "=== 编译 host 工具链（tools/）==="
+          make tools/compile -j$(nproc) V=sc 2>&1 | tee tools-build.log || {
+            echo "::error::host 工具编译失败"
+            tail -300 tools-build.log > "$GITHUB_WORKSPACE/tools-error.log"
+            exit 1
+          }
+          echo "✅ host 工具编译成功"
+
+      - name: Pre-build target toolchain (fail fast)
+        run: |
+          cd "$BUILD_ROOT/openwrt"
+          set -o pipefail
+          echo "=== 编译交叉工具链（toolchain/）==="
+          make toolchain/compile -j$(nproc) V=sc 2>&1 | tee toolchain-build.log || {
+            echo "::error::交叉工具链编译失败"
+            tail -300 toolchain-build.log > "$GITHUB_WORKSPACE/toolchain-error.log"
+            exit 1
+          }
+          echo "✅ 交叉工具链编译成功"
+
       - name: Pre-build curl (fail fast + capture error)
         run: |
           cd "$BUILD_ROOT/openwrt"
@@ -388,6 +420,8 @@ jobs:
           path: |
             ${{ github.workspace }}/curl-error.log
             ${{ github.workspace }}/build-error.log
+            ${{ github.workspace }}/tools-error.log
+            ${{ github.workspace }}/toolchain-error.log
           if-no-files-found: ignore
           retention-days: 7
 
