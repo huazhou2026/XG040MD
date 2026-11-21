@@ -318,14 +318,16 @@ jobs:
             DEV_PROFILE="${PROFILE:-nokia_xg-040g-md-ubi}"
             DEV_SOC="${SOC:-an7581}"
             echo "锁定机型: ${DEV_PROFILE} (SoC: ${DEV_SOC})"
-            sed -i '/^CONFIG_TARGET_DEVICE_airoha_/d; /^# CONFIG_TARGET_DEVICE_airoha_/d; /^CONFIG_TARGET_MULTI_PROFILE=/d' .config
+            # 删除两种格式的设备行（本树真实符号是 CONFIG_TARGET_<target>_<subtarget>_DEVICE_<profile>，
+            # 而 CONFIG_TARGET_DEVICE_<target>_<subtarget>_DEVICE_<profile> 是死格式会被 defconfig 丢弃）
+            sed -i '/CONFIG_TARGET_DEVICE_airoha/d; /CONFIG_TARGET_airoha_an7581_DEVICE/d' .config
             {
               echo "CONFIG_TARGET_MULTI_PROFILE=y"
               echo "CONFIG_TARGET_PER_DEVICE_ROOTFS=y"
-              echo "CONFIG_TARGET_DEVICE_airoha_${DEV_SOC}_DEVICE_${DEV_PROFILE}=y"
+              echo "CONFIG_TARGET_airoha_${DEV_SOC}_DEVICE_${DEV_PROFILE}=y"
               echo "CONFIG_TARGET_DEVICE_PACKAGES_airoha_${DEV_SOC}_DEVICE_${DEV_PROFILE}=\"\""
             } >> .config
-            echo "=== 追加后的设备行 ==="
+            echo "=== 追加后的设备行（真实符号格式）==="
             grep "DEVICE_${DEV_PROFILE}" .config
           fi
 
@@ -364,9 +366,9 @@ jobs:
           echo "=== 设备选择验证（关键！）==="
           echo "--- targetinfo 中的 nokia 机型元数据 ---"
           grep -c "nokia_xg-040g-md-ubi" tmp/.targetinfo 2>/dev/null || echo "0 (无元数据!)"
-          echo "--- .config 中选中的设备 ---"
-          grep -E "^CONFIG_TARGET_DEVICE_.*=y" .config || echo "(没有任何设备被选中!)"
-          if ! grep -q "^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y" .config; then
+          echo "--- .config 中选中的设备（真实符号格式）---"
+          grep -E "^CONFIG_TARGET_airoha_an7581_DEVICE_.*=y" .config || echo "(没有任何设备被选中!)"
+          if ! grep -q "^CONFIG_TARGET_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y" .config; then
             echo "::error::机型 nokia_xg-040g-md-ubi 未被选中，defconfig 回退到了默认设备（EVB）！立即停止，避免编错固件。"
             grep -E "^CONFIG_TARGET" .config | head -20
             exit 1
