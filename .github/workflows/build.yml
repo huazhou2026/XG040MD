@@ -362,18 +362,34 @@ jobs:
         run: |
           cd "$BUILD_ROOT/openwrt"
           mkdir -p "$GITHUB_WORKSPACE/artifact"
-          find bin/targets -name "*.itb" -o -name "*.ubi" -o -name "*.img" -o -name "*.bin" | head -20 | while read f; do
+          
+          echo "=== Searching for firmware files in bin/targets ==="
+          find bin/targets -type f \( -name "*.itb" -o -name "*.ubi" -o -name "*.img" -o -name "*.bin" \) | while read f; do
+            echo "Found: $f"
             cp "$f" "$GITHUB_WORKSPACE/artifact/"
           done
+          
+          echo "=== All files in artifact directory ==="
+          ls -la "$GITHUB_WORKSPACE/artifact/"
+          
           # 重命名为用户期望的文件名（airoha 前缀）
-          for f in "$GITHUB_WORKSPACE/artifact"/ponwrt-an7581-nokia_xg-040g-md-ubi-*.itb; do
+          for f in "$GITHUB_WORKSPACE/artifact"/*.itb; do
             if [ -f "$f" ]; then
               base=$(basename "$f")
-              newname="ponwrt-airoha-an7581-${base#ponwrt-an7581-}"
-              cp "$f" "$GITHUB_WORKSPACE/artifact/$newname"
-              echo "✅ 已生成: $newname"
+              # 如果文件名不包含 airoha，添加前缀
+              if [[ "$base" != *"airoha"* ]]; then
+                newname="ponwrt-airoha-an7581-${base#ponwrt-an7581-}"
+                # 如果还是没匹配上，尝试其他模式
+                if [[ "$newname" == "$base" ]]; then
+                  newname="ponwrt-airoha-an7581-nokia_xg-040g-md-ubi-squashfs-sysupgrade.itb"
+                fi
+                cp "$f" "$GITHUB_WORKSPACE/artifact/$newname"
+                echo "✅ 已生成: $newname"
+              fi
             fi
           done
+          
+          echo "=== Final artifact directory ==="
           ls -la "$GITHUB_WORKSPACE/artifact/"
 
       - name: Upload firmware artifact
